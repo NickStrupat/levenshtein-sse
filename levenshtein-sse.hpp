@@ -22,6 +22,21 @@
 #include <immintrin.h>
 #endif
 
+#if defined(__APPLE__) || defined(__linux__)
+#include <alloca.h>
+#define ALLOCA(size) alloca(size)
+#elif defined(_WIN32)
+#define ALLOCA(size) _alloca(size)
+#else
+#error Platform not supported
+#endif
+
+#define CALLOCA(size) (memset(ALLOCA(size), 0, size))
+
+#define ALIGNED_POINTER(p, alignment) (reinterpret_cast<void *>((ptrdiff_t(p) + (alignment - 1)) & ~ptrdiff_t(alignment - 1)))
+#define ALIGNED_ALLOCA(size, alignment) (ALIGNED_POINTER(ALLOCA(size), alignment))
+#define ALIGNED_CALLOCA(size, alignment) (memset(ALIGNED_POINTER(ALLOCA(size), alignment), 0, size))
+
 namespace levenshteinSSE {
 
 /**
@@ -749,10 +764,14 @@ T levenshteinDiagonal(Iterator1 a, Iterator1 aEnd, Iterator2 b, Iterator2 bEnd) 
   
   assert(0 < aLen);
   assert(aLen <= bLen);
-  
-  typedef AlignmentAllocator<T, alignment> Alloc;
-  std::vector<T, Alloc> diag  (aLen + 1, T(0));
-  std::vector<T, Alloc> diag2 (aLen + 1, T(0));
+
+  constexpr size_t N = alignment;
+  auto const n = aLen + 1;
+  typedef T* pointer;
+  typedef T value_type;
+  auto const alloc_size = n * sizeof(value_type) + 8 * N;
+  auto diag = reinterpret_cast<pointer>(reinterpret_cast<char*>(ALIGNED_CALLOCA(alloc_size, N)) + 4 * N);
+  auto diag2 = reinterpret_cast<pointer>(reinterpret_cast<char*>(ALIGNED_CALLOCA(alloc_size, N)) + 4 * N);
   
   std::size_t i, j, k;
   
@@ -771,8 +790,8 @@ T levenshteinDiagonal(Iterator1 a, Iterator1 aEnd, Iterator2 b, Iterator2 bEnd) 
       
       assert(bLen >= j);
       assert(aLen >= i);
-      
-      LevenshteinIteration<std::vector<T, Alloc>, std::vector<T, Alloc>, Iterator1, Iterator2>
+
+	  LevenshteinIteration<T*, T*, Iterator1, Iterator2>
         ::perform(a, b, i, j, bLen, diag, diag2);
     }
     
